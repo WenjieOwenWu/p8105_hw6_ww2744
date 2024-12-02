@@ -11,6 +11,62 @@ library(ggplot2)
 library(dplyr)
 library(purrr)
 library(modelr)
+library(rsample)
+```
+
+# Problem 1
+
+```{r}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything())
+```
+
+```{r}
+bootstrap_samples = bootstraps(weather_df, times = 5000)
+
+calculate_metrics = function(split) {
+  data = analysis(split)
+  fit = lm(tmax ~ tmin, data = data)
+  r_squared = glance(fit)$r.squared
+  coefs = tidy(fit)
+  beta0 = coefs$estimate[coefs$term == "(Intercept)"]
+  beta1 = coefs$estimate[coefs$term == "tmin"]
+  log_beta_product = log(beta0 * beta1)
+  return(tibble(r_squared = r_squared, log_beta_product = log_beta_product))
+}
+
+bootstrap_results = bootstrap_samples |>
+  mutate(metrics = map(splits, calculate_metrics)) |>
+  unnest(metrics)
+
+bootstrap_summary = bootstrap_results |>
+  summarize(
+    r2_lower = quantile(r_squared, 0.025),
+    r2_upper = quantile(r_squared, 0.975),
+    log_beta_lower = quantile(log_beta_product, 0.025),
+    log_beta_upper = quantile(log_beta_product, 0.975)
+  )
+
+print(bootstrap_summary)
+
+ggplot(bootstrap_results, aes(x = r_squared)) +
+  geom_histogram(bins = 30, fill = "skyblue", color = "black") +
+  labs(title = "Distribution of R-squared", x = "R-squared", y = "Frequency") +
+  theme_minimal()
+
+ggplot(bootstrap_results, aes(x = log_beta_product)) +
+  geom_histogram(bins = 30, fill = "lightgreen", color = "black") +
+  labs(title = "Distribution of log(beta0 * beta1)", x = "log(beta0 * beta1)", y = "Frequency") +
+  theme_minimal()
 ```
 
 
